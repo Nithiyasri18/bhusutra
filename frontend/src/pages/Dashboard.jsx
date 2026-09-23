@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
 import api from '../api'
 import { dashboardData } from '../data/dummy'
+import RoleDashboard from './RoleDashboard'
+import { getCurrentUser, getRecordStats, getScopedRecords, ROLE } from '../data/access'
 
 function ChartPanel({ title, subtitle, children, className = '' }) {
   return <section className={`panel ${className}`}><div className="panel-heading"><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div><button className="more-button" aria-label={`More options for ${title}`}>...</button></div>{children}</section>
@@ -17,16 +19,22 @@ function StatusPill({ status }) {
 export default function Dashboard() {
   const [data, setData] = useState(dashboardData)
   const navigate = useNavigate()
+  const user = getCurrentUser()
+  const liveStats = getRecordStats(getScopedRecords(user))
+  const liveKpis = data.kpis.map((kpi, index) => ({ ...kpi, value: [liveStats.totalRecords, liveStats.verifiedRecords, liveStats.pendingRecords, liveStats.conflictRecords, `${liveStats.districtCoverage} districts`, liveStats.averageTrustScore][index] }))
 
   useEffect(() => {
+    if (user.role !== ROLE.ADMIN) return
     api.get('/dashboard/summary').then((response) => {
       if (response.data) setData((current) => ({ ...current, apiSummary: response.data }))
     }).catch(() => {})
   }, [])
 
+  if (user.role !== ROLE.ADMIN) return <RoleDashboard />
+
   return <Layout title="Command dashboard">
     <div className="dashboard-intro"><p className="text-sm text-slate-500">Good morning, {localStorage.getItem('bhusutra_name') || 'Aditi Rao'}. Here is today&apos;s validation overview.</p><div className="flex flex-wrap gap-3"><button onClick={() => navigate('/upload')} className="secondary-button">+ Upload new record</button><button onClick={() => navigate('/verification-queue')} className="primary-button compact">Start verification <span>-&gt;</span></button></div></div>
-    <div className="kpi-grid">{data.kpis.map((kpi) => <button type="button" onClick={() => kpi.view && navigate(`/records?view=${kpi.view}`)} className={`kpi-card kpi-${kpi.tone} text-left w-full`} key={kpi.label}><div className="kpi-top"><span>{kpi.label}</span><span className="kpi-arrow">&#8599;</span></div><div className="kpi-value">{kpi.value}</div><div className="kpi-bottom"><span className="kpi-change">{kpi.change}</span><span>{kpi.note}</span></div></button>)}</div>
+    <div className="kpi-grid">{liveKpis.map((kpi) => <button type="button" onClick={() => kpi.view && navigate(`/records?view=${kpi.view}`)} className={`kpi-card kpi-${kpi.tone} text-left w-full`} key={kpi.label}><div className="kpi-top"><span>{kpi.label}</span><span className="kpi-arrow">&#8599;</span></div><div className="kpi-value">{kpi.value}</div><div className="kpi-bottom"><span className="kpi-change">{kpi.change}</span><span>{kpi.note}</span></div></button>)}</div>
     <div className="chart-grid-top">
       <ChartPanel title="Monthly records processed" subtitle="Volume of records validated through the platform" className="records-chart"><ResponsiveContainer width="100%" height={230}><AreaChart data={data.monthlyRecords} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}><defs><linearGradient id="recordsFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0f8b8d" stopOpacity={0.28} /><stop offset="100%" stopColor="#0f8b8d" stopOpacity={0.02} /></linearGradient></defs><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#8a9caf' }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#8a9caf' }} /><Tooltip contentStyle={{ border: '0', borderRadius: '8px' }} /><Area type="monotone" dataKey="records" stroke="#0f8b8d" strokeWidth={3} fill="url(#recordsFill)" /></AreaChart></ResponsiveContainer></ChartPanel>
       <ChartPanel title="Trust score distribution" subtitle="Confidence across seeded records"><div className="donut-layout"><ResponsiveContainer width="52%" height={190}><PieChart><Pie data={data.trustDistribution} dataKey="value" innerRadius={57} outerRadius={77} paddingAngle={3} stroke="none">{data.trustDistribution.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie><text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle" className="donut-number">{data.averageTrustScore}</text><text x="50%" y="60%" textAnchor="middle" dominantBaseline="middle" className="donut-label">AVG SCORE</text></PieChart></ResponsiveContainer><div className="legend-list">{data.trustDistribution.map((item) => <div key={item.name}><span className="legend-dot" style={{ background: item.color }} />{item.name}<strong>{item.value}%</strong></div>)}</div></div></ChartPanel>
