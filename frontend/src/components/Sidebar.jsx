@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 
 const menu = [
   { to: '/dashboard', label: 'Dashboard', icon: 'grid' }, { to: '/upload', label: 'Upload Documents', icon: 'upload' },
+  { to: '/records', label: 'Land Records', icon: 'grid' },
   { to: '/ocr-results/doc-142', label: 'OCR Results', icon: 'scan' }, { to: '/validation', label: 'Validation Engine', icon: 'shield' },
   { to: '/verification-queue', label: 'Human Verification', icon: 'users' }, { to: '/gis-map', label: 'GIS Map View', icon: 'map' },
   { to: '/audit-trail', label: 'Audit Trail', icon: 'history' }, { to: '/analytics', label: 'Analytics', icon: 'chart' },

@@ -1,5 +1,6 @@
 // Seeded demo data for AI-heavy pages that are simulated for the SIH prototype.
 // In production these would come from the OCR/ML and GIS pipelines.
+import { landRecords } from './records'
 
 export const ocrResults = {
   "doc-142": {
@@ -86,40 +87,37 @@ export const analyticsData = {
 
 export const dashboardData = {
   kpis: [
-    { label: 'Total records processed', value: '18,642', change: '+12.8%', note: 'vs. last month', tone: 'blue' },
-    { label: 'Records verified', value: '14,908', change: '+8.4%', note: '80% completion rate', tone: 'teal' },
-    { label: 'Pending verification', value: '2,486', change: '−4.2%', note: '342 due this week', tone: 'amber' },
-    { label: 'High-risk conflicts', value: '126', change: '−18.6%', note: 'needs officer review', tone: 'red' },
-    { label: 'District coverage', value: '18 / 24', change: '75%', note: 'districts onboarded', tone: 'violet' },
-    { label: 'Average trust score', value: '92.4', change: '+2.1 pts', note: 'across verified records', tone: 'green' },
+    { label: 'Total records processed', value: landRecords.length, change: '12 seeded', note: 'open all records', tone: 'blue', view: 'all' },
+    { label: 'Records verified', value: landRecords.filter((record) => record.verificationStatus === 'Verified').length, change: 'verified', note: 'open verified records', tone: 'teal', view: 'verified' },
+    { label: 'Pending verification', value: landRecords.filter((record) => record.verificationStatus === 'Pending').length, change: 'officer queue', note: 'requires verification', tone: 'amber', view: 'pending' },
+    { label: 'High-risk conflicts', value: landRecords.filter((record) => record.riskLevel === 'High').length, change: 'needs review', note: 'identifier or field mismatch', tone: 'red', view: 'conflicts' },
+    { label: 'District coverage', value: `${new Set(landRecords.map((record) => record.district)).size} districts`, change: 'seeded scope', note: 'Tamil Nadu records', tone: 'violet' },
+    { label: 'Average trust score', value: (landRecords.reduce((total, record) => total + record.trustScore, 0) / landRecords.length).toFixed(1), change: 'mock average', note: 'across all records', tone: 'green' },
   ],
   monthlyRecords: [
-    { month: 'Jan', records: 920 }, { month: 'Feb', records: 1180 }, { month: 'Mar', records: 1410 },
-    { month: 'Apr', records: 1690 }, { month: 'May', records: 1830 }, { month: 'Jun', records: 2260 },
-    { month: 'Jul', records: 2480 }, { month: 'Aug', records: 2710 }, { month: 'Sep', records: 3162 },
+    { month: 'Jan', records: 2 }, { month: 'Feb', records: 3 }, { month: 'Mar', records: 4 },
+    { month: 'Apr', records: 5 }, { month: 'May', records: 6 }, { month: 'Jun', records: 7 },
+    { month: 'Jul', records: 8 }, { month: 'Aug', records: 10 }, { month: 'Sep', records: 12 },
   ],
   trustDistribution: [
-    { name: '90–100 Excellent', value: 64, color: '#0f8b8d' },
-    { name: '75–89 Good', value: 24, color: '#2c5aa0' },
-    { name: '60–74 Review', value: 9, color: '#e3a72f' },
-    { name: 'Below 60 Risk', value: 3, color: '#d75959' },
+    { name: '90–100 Excellent', value: Math.round(landRecords.filter((record) => record.trustScore >= 90).length / landRecords.length * 100), color: '#0f8b8d' },
+    { name: '75–89 Good', value: Math.round(landRecords.filter((record) => record.trustScore >= 75 && record.trustScore < 90).length / landRecords.length * 100), color: '#2c5aa0' },
+    { name: '60–74 Review', value: Math.round(landRecords.filter((record) => record.trustScore >= 60 && record.trustScore < 75).length / landRecords.length * 100), color: '#e3a72f' },
+    { name: 'Below 60 Risk', value: Math.round(landRecords.filter((record) => record.trustScore < 60).length / landRecords.length * 100), color: '#d75959' },
   ],
+  averageTrustScore: (landRecords.reduce((total, record) => total + record.trustScore, 0) / landRecords.length).toFixed(1),
   validationStatus: [
-    { name: 'Verified', value: 14908, color: '#0f8b8d' },
-    { name: 'In review', value: 2486, color: '#e3a72f' },
-    { name: 'Conflicted', value: 126, color: '#d75959' },
-    { name: 'Processing', value: 1122, color: '#8aa4c5' },
+    { name: 'Verified', value: landRecords.filter((record) => record.status === 'Verified').length, color: '#0f8b8d' },
+    { name: 'In review', value: landRecords.filter((record) => record.status === 'Pending verification').length, color: '#e3a72f' },
+    { name: 'Conflicted', value: landRecords.filter((record) => record.status === 'Conflict').length, color: '#d75959' },
+    { name: 'Processing', value: landRecords.filter((record) => record.status === 'Processing').length, color: '#8aa4c5' },
   ],
   districts: [
-    { district: 'Mysuru', completed: 94, total: 100 }, { district: 'Mandya', completed: 87, total: 100 },
-    { district: 'Hassan', completed: 76, total: 100 }, { district: 'Kodagu', completed: 68, total: 100 },
-    { district: 'Tumakuru', completed: 59, total: 100 },
+    { district: 'Krishnagiri', completed: 100, total: 1 }, { district: 'Tiruvallur', completed: 50, total: 2 },
+    { district: 'Madurai', completed: 100, total: 1 }, { district: 'Salem', completed: 0, total: 1 },
+    { district: 'Coimbatore', completed: 100, total: 1 },
   ],
   activity: [
-    { survey: '142/2A', khasra: '142-K2A', khata: '331', status: 'Verified', score: '98.2', updated: 'Today, 10:42 AM' },
-    { survey: '88/1', khasra: '88-K1', khata: '214', status: 'Conflict', score: '61.8', updated: 'Today, 09:18 AM' },
-    { survey: '207/3B', khasra: '207-K3B', khata: '582', status: 'Verified', score: '94.6', updated: 'Yesterday, 04:36 PM' },
-    { survey: '51/4', khasra: '51-K4', khata: '109', status: 'In review', score: '79.4', updated: 'Yesterday, 02:11 PM' },
-    { survey: '312/7', khasra: '312-K7', khata: '744', status: 'Verified', score: '96.1', updated: '18 Sep 2026, 11:05 AM' },
+    ...landRecords.slice(0, 5).map((record) => ({ survey: record.surveyNo, khasra: record.khasraNo, khata: record.khataNo, status: record.status === 'Pending verification' ? 'In review' : record.status, score: record.trustScore.toFixed(1), updated: record.lastUpdated })),
   ],
 }

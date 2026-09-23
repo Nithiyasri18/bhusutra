@@ -1,80 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
-import api from '../api'
+import { createDemoUpload } from '../data/demoStore'
+
+const steps = ['Upload document', 'Document preview', 'Extracted record', 'Identifier matching', 'Validation', 'Result']
 
 export default function Upload() {
-  const [docs, setDocs] = useState([])
   const [file, setFile] = useState(null)
-  const [batchName, setBatchName] = useState('Krishnagiri_Taluk_Batch_07')
-  const [uploading, setUploading] = useState(false)
+  const [scenario, setScenario] = useState('consistent')
+  const navigate = useNavigate()
 
-  function loadDocs() {
-    api.get('/documents').then((res) => setDocs(res.data)).catch(() => {})
-  }
-
-  useEffect(() => { loadDocs() }, [])
-
-  async function handleUpload(e) {
-    e.preventDefault()
+  function startDemo(event) {
+    event.preventDefault()
     if (!file) return
-    setUploading(true)
-    const form = new FormData()
-    form.append('file', file)
-    form.append('batch_name', batchName)
-    try {
-      await api.post('/documents/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      setFile(null)
-      loadDocs()
-    } catch (err) {
-      alert('Upload failed — check backend is running')
-    }
-    setUploading(false)
+    createDemoUpload(file.name, scenario)
+    navigate('/ocr-results/demo-upload')
   }
 
-  const statusColor = { Extracted: 'text-green-700 bg-green-50', 'OCR Running': 'text-amber-700 bg-amber-50', Failed: 'text-red-700 bg-red-50', Queued: 'text-gray-600 bg-gray-100' }
-
-  return (
-    <Layout title="Upload Documents">
-      <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-        <form onSubmit={handleUpload} className="flex items-end gap-4">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">Batch Name</label>
-            <input value={batchName} onChange={(e) => setBatchName(e.target.value)}
-              className="w-full border rounded-md px-3 py-2 text-sm mt-1" />
-          </div>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">Document (PDF / TIFF / JPG)</label>
-            <input type="file" onChange={(e) => setFile(e.target.files[0])}
-              className="w-full text-sm mt-1" />
-          </div>
-          <button disabled={uploading} className="bg-govnavy text-white px-5 py-2 rounded-md text-sm">
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
-        </form>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <div className="text-sm font-semibold text-govnavy mb-3">Processing Queue</div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-500 border-b">
-              <th className="py-2">Filename</th><th>Batch</th><th>Status</th><th>Uploaded At</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {docs.map((d) => (
-              <tr key={d.id} className="border-b last:border-0">
-                <td className="py-2">{d.filename}</td>
-                <td className="text-xs text-gray-500">{d.batch_name}</td>
-                <td><span className={`text-xs px-2 py-1 rounded-full ${statusColor[d.status] || ''}`}>{d.status}</span></td>
-                <td className="text-xs text-gray-500">{new Date(d.uploaded_at).toLocaleString()}</td>
-                <td><a href="/ocr-results/doc-142" className="text-govblue text-xs hover:underline">View Extracted Fields</a></td>
-              </tr>
-            ))}
-            {docs.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-gray-400 text-sm">No documents yet — upload one above.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </Layout>
-  )
+  return <Layout title="Upload document">
+    <div className="mb-6"><div className="flex flex-wrap items-center gap-2">{steps.map((step, index) => <div key={step} className="flex items-center gap-2"><span className={`grid place-items-center w-7 h-7 rounded-full text-[11px] font-bold ${index === 0 ? 'bg-[#0f8b8d] text-white' : 'bg-white border text-slate-400'}`}>{index + 1}</span><span className={`text-xs ${index === 0 ? 'font-bold text-[#183755]' : 'text-slate-400'}`}>{step}</span>{index < steps.length - 1 && <span className="text-slate-300 mx-1">→</span>}</div>)}</div></div>
+    <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_.85fr] gap-5">
+      <section className="panel"><div className="panel-heading"><div><h3>Start a verification case</h3><p>Upload a land document to simulate OCR and evidence matching.</p></div><span className="status-pill pill-teal">Mock OCR</span></div><form onSubmit={startDemo} className="space-y-5"><label className="field-label">Land document<input required type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,image/*,application/pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} className="field-input file:mr-3 file:border-0 file:bg-[#e6f5f3] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#0a5960]" /><span className="block text-[11px] text-slate-400 mt-2">Accepted formats: PDF, JPG, PNG, TIFF</span></label><div><div className="field-label mb-2">Demo scenario</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><button type="button" onClick={() => setScenario('consistent')} className={`text-left p-4 rounded-lg border ${scenario === 'consistent' ? 'border-[#0f8b8d] bg-[#f0fbfa]' : 'border-slate-200'}`}><strong className="block text-sm text-[#183755]">Consistent record</strong><span className="block text-xs text-slate-500 mt-1">All identifiers match existing evidence.</span></button><button type="button" onClick={() => setScenario('conflict')} className={`text-left p-4 rounded-lg border ${scenario === 'conflict' ? 'border-[#d75959] bg-[#fff7f7]' : 'border-slate-200'}`}><strong className="block text-sm text-[#183755]">Conflict example</strong><span className="block text-xs text-slate-500 mt-1">Khasra 92 conflicts with existing Khasra 87.</span></button></div></div><button type="submit" className="primary-button w-full sm:w-auto">Preview and extract <span>-&gt;</span></button></form></section>
+      <section className="panel bg-[#0b3457] text-white"><div className="eyebrow light">Verification pipeline</div><h2 className="text-xl font-bold mt-3">From paper to trusted record.</h2><p className="text-sm text-white/65 leading-6 mt-3">The prototype simulates extraction, compares every identifier against existing evidence, and highlights exactly why an officer may need to review the case.</p><div className="mt-7 space-y-4">{['Preview the uploaded document', 'Review extracted land fields', 'Compare Survey, Khasra and Khata', 'Approve or send for verification'].map((item, index) => <div key={item} className="flex items-center gap-3"><span className="grid place-items-center w-6 h-6 rounded-full bg-[#8de1d9] text-[#08213f] text-xs font-bold">{index + 1}</span><span className="text-sm text-white/80">{item}</span></div>)}</div></section>
+    </div>
+  </Layout>
 }
