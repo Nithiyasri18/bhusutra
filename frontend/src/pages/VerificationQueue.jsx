@@ -1,59 +1,81 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
-import Card from '../components/Card'
 import api from '../api'
+import { getCurrentUser, ROLE } from '../data/access'
 
 export default function VerificationQueue() {
+  const user = getCurrentUser()
   const [cases, setCases] = useState([])
+  const [notes, setNotes] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState('')
+  const [error, setError] = useState('')
+  const canResolve = user?.role === ROLE.OFFICER || user?.role === ROLE.ADMIN
 
-  useEffect(() => {
-    api.get('/verification/cases').then((res) => setCases(res.data)).catch(() => {})
+  const refresh = useCallback(async () => {
+    const response = await api.get('/verification/cases')
+    setCases(response.data)
   }, [])
 
+  useEffect(() => {
+    refresh().catch((requestError) => setError(requestError.response?.data?.detail || 'Could not load the officer queue.'))
+      .finally(() => setLoading(false))
+  }, [refresh])
+
   async function assign(id) {
-    await api.post(`/verification/cases/${id}/assign`)
-    const res = await api.get('/verification/cases')
-    setCases(res.data)
+    setBusyId(id)
+    setError('')
+    try {
+      await api.post(`/verification/cases/${id}/assign`)
+      await refresh()
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Could not assign this case.')
+    } finally {
+      setBusyId('')
+    }
   }
 
-  const open = cases.filter((c) => c.status === 'Open')
-  const resolvedToday = cases.filter((c) => c.status !== 'Open').length
+  async function resolve(id, action) {
+    const note = (notes[id] || '').trim()
+    if (!note) {
+      setError('Enter a review note before approving or rejecting a case.')
+      return
+    }
+    setBusyId(id)
+    setError('')
+    try {
+      await api.post(`/verification/cases/${id}/action`, { action, notes: note })
+      setNotes((current) => ({ ...current, [id]: '' }))
+      await refresh()
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || `Could not ${action.toLowerCase()} this case.`)
+    } finally {
+      setBusyId('')
+    }
+  }
 
-  return (
-    <Layout title="Human Verification Queue">
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <Card label="Cases in Queue" value={open.length} />
-        <Card label="Resolved" value={resolvedToday} />
-        <Card label="Avg Resolution Time" value="4.2 min" />
+  return <Layout title="Officer review queue">
+    <p className="mb-5 text-sm text-slate-500">Every case shows extracted fields and review reasons. Official ownership verification is unavailable; human review is required.</p>
+    {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
+    {loading && <p className="text-sm text-slate-500" role="status">Loading review cases...</p>}
+    {!loading && cases.length === 0 && <section className="panel py-10 text-center text-sm text-slate-500">No verification cases are waiting for review.</section>}
+    <div className="space-y-4">{cases.map((item) => <section className="panel" key={item.id}>
+      <div className="panel-heading">
+        <div><h3>{item.document?.filename || `Case ${item.id.slice(0, 8)}`}</h3><p>Created {new Date(item.created_at).toLocaleString()} · Case status: {item.status}</p></div>
+        {item.score != null && <span className="status-pill">{item.score}/100 review readiness</span>}
       </div>
-
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-500 border-b">
-              <th className="py-2">Case ID</th><th>Record</th><th>Risk Score</th><th>Assigned To</th><th>Status</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {cases.map((c) => (
-              <tr key={c.id} className="border-b last:border-0">
-                <td className="py-2 font-mono text-xs">{c.id.slice(0,8)}</td>
-                <td className="font-mono text-xs">{c.record_id.slice(0,8)}</td>
-                <td>
-                  <span className={`text-xs px-2 py-1 rounded-full ${c.risk_score > 70 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {c.risk_score}
-                  </span>
-                </td>
-                <td className="text-xs">{c.assigned_to ? c.assigned_to.slice(0,8) : <button onClick={() => assign(c.id)} className="text-govblue hover:underline">Assign to Me</button>}</td>
-                <td className="text-xs">{c.status}</td>
-                <td><Link to={`/verification/${c.id}`} className="text-govblue text-xs hover:underline">Open Case →</Link></td>
-              </tr>
-            ))}
-            {cases.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-gray-400 text-sm">No cases yet — run the seed script to generate demo cases.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </Layout>
-  )
+      {item.document_id && <Link to={`/documents/${item.document_id}`} className="view-all">Open document and extracted fields -&gt;</Link>}
+      {item.reasons?.length > 0 && <ul className="my-4 list-disc space-y-1 pl-5 text-sm text-amber-800">{item.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+      {item.notes && <p className="my-3 text-sm text-slate-600">Previous notes: {item.notes}</p>}
+      {item.status === 'Open' && canResolve && <div className="mt-4 border-t border-slate-100 pt-4">
+        <label className="field-label">Officer review note<textarea rows={2} maxLength={4000} value={notes[item.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} className="field-input" placeholder="Document your review findings and decision." /></label>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {!item.assigned_to && <button disabled={busyId === item.id} onClick={() => assign(item.id)} className="secondary-button">Assign to me</button>}
+          <button disabled={busyId === item.id} onClick={() => resolve(item.id, 'Approve')} className="primary-button disabled:opacity-50">Approve after review</button>
+          <button disabled={busyId === item.id} onClick={() => resolve(item.id, 'Reject')} className="secondary-button disabled:opacity-50">Reject after review</button>
+        </div>
+      </div>}
+    </section>)}</div>
+  </Layout>
 }

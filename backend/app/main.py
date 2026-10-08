@@ -3,8 +3,6 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import Base, engine
-from . import models  # noqa: F401 (ensures models are registered before create_all)
 from .routers import (
     auth_router,
     dashboard_router,
@@ -15,11 +13,10 @@ from .routers import (
     export_router,
     users_router,
     copilot_router,
+    official_router,
 )
 
-Base.metadata.create_all(bind=engine)
-
-app = FastAPI(title="BhuSutra API", version="1.0.0")
+app = FastAPI(title="BhuSutra API", version="2.0.0")
 allowed_origins = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
@@ -43,6 +40,7 @@ app.include_router(audit_router.router)
 app.include_router(export_router.router)
 app.include_router(users_router.router)
 app.include_router(copilot_router.router)
+app.include_router(official_router.router)
 
 
 @app.get("/")

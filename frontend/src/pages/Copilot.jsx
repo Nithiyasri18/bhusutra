@@ -3,9 +3,10 @@ import Layout from '../components/Layout'
 import api from '../api'
 
 const suggestedQuestions = [
-  'What is the difference between a survey number and a khasra number?',
-  'What details should I check on a land record?',
-  'What should I do if a land record contains an error?',
+  'What is a Survey Number, Khata Number, and Khasra Number?',
+  'What is mutation, and what documents are commonly required?',
+  'How does land verification work, and what should I upload next?',
+  'Why might my verification score be low?',
 ]
 
 export default function Copilot() {
@@ -27,7 +28,7 @@ export default function Copilot() {
     setLoading(true)
 
     try {
-      const response = await api.post('/copilot/ask', { turns })
+      const response = await api.post('/api/copilot', { turns })
       setMessages([
         ...messages,
         { role: 'user', content },
@@ -50,7 +51,7 @@ export default function Copilot() {
   return <Layout title="Land-record AI Copilot">
     <div className="dashboard-intro">
       <div>
-        <p className="text-sm text-slate-500">Ask general questions about land records and record-keeping.</p>
+        <p className="text-sm text-slate-500">Get citizen-focused guidance on land records, uploads, and document review reasons.</p>
         <p className="text-xs text-slate-400 mt-1">The Copilot cannot access or verify your personal records.</p>
       </div>
       {messages.length > 0 && <button type="button" onClick={startNewConversation} className="secondary-button">New conversation</button>}
