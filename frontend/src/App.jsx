@@ -17,6 +17,7 @@ import VerificationResult from './pages/VerificationResult'
 import RecordDetails from './pages/RecordDetails'
 import Unauthorized from './pages/Unauthorized'
 import Profile from './pages/Profile'
+import Copilot from './pages/Copilot'
 import { canAccess, getCurrentUser, ROLE } from './data/access'
 
 function RequireAuth({ children }) {
@@ -51,6 +52,7 @@ export default function App() {
       <Route path="/export" element={<RequireAuth><RequireRole roles={[ROLE.DISTRICT, ROLE.ADMIN]}><Export /></RequireRole></RequireAuth>} />
       <Route path="/admin/users" element={<RequireAuth><RequireRole roles={[ROLE.ADMIN]}><AdminUsers /></RequireRole></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+      <Route path="/copilot" element={<RequireAuth><Copilot /></RequireAuth>} />
     </Routes>
   )
 }

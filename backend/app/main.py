@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,15 +14,21 @@ from .routers import (
     audit_router,
     export_router,
     users_router,
+    copilot_router,
 )
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="BhuSutra API", version="1.0.0")
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +42,7 @@ app.include_router(verification_router.router)
 app.include_router(audit_router.router)
 app.include_router(export_router.router)
 app.include_router(users_router.router)
+app.include_router(copilot_router.router)
 
 
 @app.get("/")
