@@ -1,66 +1,111 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api'
-import { demoUsers } from '../data/access'
+
+function saveSession(data, email) {
+  localStorage.setItem('bhusutra_token', data.access_token)
+  localStorage.setItem('bhusutra_user_id', data.id)
+  localStorage.setItem('bhusutra_email', email)
+  localStorage.setItem('bhusutra_role', data.role)
+  localStorage.setItem('bhusutra_name', data.name)
+}
 
 export default function Login() {
-  const [email, setEmail] = useState('admin@bhusutra.gov.in')
-  const [password, setPassword] = useState('demo123')
-  const [remember, setRemember] = useState(true)
+  const [searchParams] = useSearchParams()
+  const resetToken = searchParams.get('reset_token')
+  const [mode, setMode] = useState(resetToken ? 'reset' : 'login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [mobile, setMobile] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
   async function handleSubmit(event) {
     event.preventDefault()
-    const demoUser = demoUsers.find((user) => user.email === email && user.password === password)
-    if (demoUser) {
-      localStorage.setItem('bhusutra_token', `demo-${demoUser.id}`)
-      localStorage.setItem('bhusutra_user_id', demoUser.id)
-      localStorage.setItem('bhusutra_email', demoUser.email)
-      localStorage.setItem('bhusutra_role', demoUser.role)
-      localStorage.setItem('bhusutra_name', demoUser.name)
-      localStorage.setItem('bhusutra_district', demoUser.district || '')
-      navigate('/dashboard')
+    setError('')
+    setMessage('')
+    if (mode === 'register' && password !== confirmPassword) {
+      setError('Passwords do not match.')
       return
     }
+    setLoading(true)
     try {
-      const response = await api.post('/auth/login', { email, password })
-      localStorage.setItem('bhusutra_token', response.data.access_token)
-      localStorage.setItem('bhusutra_user_id', response.data.id || '')
-      localStorage.setItem('bhusutra_email', email)
-      localStorage.setItem('bhusutra_role', response.data.role)
-      localStorage.setItem('bhusutra_name', response.data.name)
-    } catch {
-      localStorage.setItem('bhusutra_token', 'demo-session')
-      localStorage.setItem('bhusutra_user_id', 'admin-1')
-      localStorage.setItem('bhusutra_email', email)
-      localStorage.setItem('bhusutra_role', 'Administrator')
-      localStorage.setItem('bhusutra_name', email.startsWith('admin') ? 'Aditi Rao' : 'Demo Officer')
+      if (mode === 'login') {
+        const response = await api.post('/auth/login', { email, password })
+        saveSession(response.data, email)
+        navigate('/dashboard', { replace: true })
+      } else if (mode === 'register') {
+        const response = await api.post('/auth/register', { name, email, mobile_number: mobile, password })
+        saveSession(response.data, email)
+        navigate('/dashboard', { replace: true })
+      } else if (mode === 'forgot') {
+        const response = await api.post('/auth/forgot-password', { email })
+        setMessage(response.data.detail)
+      } else {
+        const response = await api.post('/auth/reset-password', { token: resetToken, password })
+        setMessage(response.data.detail)
+        window.history.replaceState({}, '', '/login')
+        setMode('login')
+      }
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'The request failed. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    navigate('/dashboard')
   }
+
+  const titles = {
+    login: ['Welcome back', 'Sign in to your land records workspace.'],
+    register: ['Create a citizen account', 'Register securely to submit and track land documents.'],
+    forgot: ['Reset your password', 'Enter your account email to request a secure reset link.'],
+    reset: ['Choose a new password', 'Reset links expire after 30 minutes and can only be used once.'],
+  }
+  const [title, subtitle] = titles[mode]
 
   return (
     <main className="login-page">
       <section className="login-visual">
         <div className="login-visual-content">
           <div className="flex items-center gap-3"><div className="brand-mark">B</div><div><div className="text-xl font-bold tracking-wide">BhuSutra</div><div className="text-[10px] uppercase tracking-[0.2em] text-[#8de1d9]">Land intelligence</div></div></div>
-          <div className="mt-auto max-w-lg"><div className="eyebrow light">State Land Records Department</div><h1 className="display-title">One source of truth for every parcel.</h1><p className="mt-5 text-white/65 text-base leading-7">AI-assisted validation for accurate, transparent and trusted land records across the state.</p><div className="mt-10 flex gap-8"><div><div className="text-2xl font-bold">14</div><div className="text-xs text-white/50 mt-1">Sample records</div></div><div><div className="text-2xl font-bold">84.4</div><div className="text-xs text-white/50 mt-1">Average trust score</div></div><div><div className="text-2xl font-bold">14</div><div className="text-xs text-white/50 mt-1">District samples</div></div></div></div>
+          <div className="mt-auto max-w-lg"><div className="eyebrow light">Secure digital land-record services</div><h1 className="display-title">One clear path to your land records.</h1><p className="mt-5 text-white/65 text-base leading-7">Upload documents, follow review progress, and get guidance on land-record processes.</p></div>
         </div>
         <div className="map-lines" aria-hidden="true"><span /><span /><span /><span /></div>
-        <div className="login-visual-footer">BHUSUTRA / DIGITAL LAND GOVERNANCE <span>v2.6.0</span></div>
+        <div className="login-visual-footer">BHUSUTRA / DIGITAL LAND RECORD SERVICES</div>
       </section>
       <section className="login-form-side">
         <div className="login-form-wrap">
           <div className="md:hidden flex items-center gap-3 mb-12"><div className="brand-mark dark">B</div><strong className="text-xl text-[#112c4c]">BhuSutra</strong></div>
-          <div className="eyebrow">Secure government access</div><h2 className="text-3xl font-bold text-[#112c4c] mt-3">Welcome back</h2><p className="text-sm text-slate-500 mt-2">Sign in to your land records workspace.</p>
-          <form onSubmit={handleSubmit} className="mt-9 space-y-5">
-            <label className="field-label">Official email address<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@department.gov.in" className="field-input" /></label>
-            <label className="field-label">Password<div className="relative"><input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="field-input pr-12" /><span className="password-lock">*</span></div></label>
-            <div className="flex items-center justify-between text-xs"><label className="flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} className="accent-[#0f8b8d]" /> Remember this device</label><button type="button" className="font-semibold text-[#0f7478] hover:underline">Forgot password?</button></div>
-            <button type="submit" className="primary-button w-full">Sign in to BhuSutra <span>-&gt;</span></button>
+          <div className="eyebrow">{mode === 'register' ? 'Citizen registration' : 'Secure account access'}</div>
+          <h2 className="text-3xl font-bold text-[#112c4c] mt-3">{title}</h2>
+          <p className="text-sm text-slate-500 mt-2">{subtitle}</p>
+
+          {mode !== 'forgot' && mode !== 'reset' && (
+            <div className="mt-6 grid grid-cols-2 rounded-lg bg-slate-100 p-1">
+              <button type="button" onClick={() => { setMode('login'); setError(''); setMessage('') }} className={`rounded-md py-2 text-sm font-semibold ${mode === 'login' ? 'bg-white text-[#183755] shadow-sm' : 'text-slate-500'}`}>Sign in</button>
+              <button type="button" onClick={() => { setMode('register'); setError(''); setMessage('') }} className={`rounded-md py-2 text-sm font-semibold ${mode === 'register' ? 'bg-white text-[#183755] shadow-sm' : 'text-slate-500'}`}>Create account</button>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+            {mode === 'register' && <>
+              <label className="field-label">Full name<input required autoComplete="name" minLength={2} maxLength={160} value={name} onChange={(event) => setName(event.target.value)} className="field-input" /></label>
+            </>}
+            {mode !== 'reset' && <label className="field-label">Email address<input required type="email" autoComplete="email" maxLength={320} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" className="field-input" /></label>}
+            {mode === 'register' && <label className="field-label">Mobile number<input required type="tel" autoComplete="tel" minLength={7} maxLength={32} value={mobile} onChange={(event) => setMobile(event.target.value)} className="field-input" /></label>}
+            {(mode === 'login' || mode === 'register' || mode === 'reset') && <label className="field-label">{mode === 'reset' ? 'New password' : 'Password'}<input required type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'login' ? 1 : 12} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} className="field-input" />{mode !== 'login' && <span className="mt-1 block text-[11px] text-slate-400">Use at least 12 characters.</span>}</label>}
+            {mode === 'register' && <label className="field-label">Confirm password<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="field-input" /></label>}
+            {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
+            {message && <p className="rounded-lg bg-teal-50 p-3 text-sm text-teal-800" role="status">{message}</p>}
+            <button type="submit" disabled={loading} className="primary-button w-full disabled:cursor-wait disabled:opacity-60">{loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create citizen account' : mode === 'forgot' ? 'Send reset link' : 'Set new password'}</button>
           </form>
-          <div className="demo-box"><div className="flex items-center justify-between"><span className="text-[11px] uppercase tracking-[0.14em] font-bold text-[#55708b]">Demo access</span><span className="demo-status">* PROTOTYPE</span></div><p className="text-xs text-slate-500 mt-2">Select a role to continue with seeded prototype data.</p><div className="mt-3 space-y-1">{demoUsers.map((account) => <button type="button" key={account.email} onClick={() => { setEmail(account.email); setPassword(account.password) }} className="demo-account"><span>{account.role}</span><span>{account.email}</span></button>)}</div></div>
-          <div className="mt-8 text-center text-[11px] text-slate-400">Authorized personnel only <span className="mx-2">|</span> <span className="text-[#0f7478]">Data protected under state security standards</span></div>
+
+          {mode === 'login' && <button type="button" onClick={() => { setMode('forgot'); setError(''); setMessage('') }} className="mt-5 text-sm font-semibold text-[#0f7478] hover:underline">Forgot password?</button>}
+          {(mode === 'forgot' || mode === 'reset') && <button type="button" onClick={() => { setMode('login'); setError(''); setMessage('') }} className="mt-5 text-sm font-semibold text-[#0f7478] hover:underline">Back to sign in</button>}
+          <div className="mt-8 text-center text-[11px] text-slate-400">Passwords are protected with secure hashing. Citizen registration does not grant staff access.</div>
         </div>
       </section>
     </main>

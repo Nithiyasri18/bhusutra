@@ -1,20 +1,73 @@
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { useNavigate } from 'react-router-dom'
-import { getDemoUpload } from '../data/demoStore'
+import api from '../api'
 
-function confColor(c) {
-  if (c >= 90) return 'bg-green-100 text-green-800'
-  if (c >= 75) return 'bg-amber-100 text-amber-800'
-  return 'bg-red-100 text-red-800'
+const fieldLabels = {
+  survey_number: 'Survey Number',
+  khata_number: 'Khata Number',
+  khasra_number: 'Khasra Number',
+  owner_name: 'Owner Name',
+  village_name: 'Village Name',
+  district: 'District',
 }
 
-const fields = [['Owner Name', 'owner'], ['Survey Number', 'surveyNo'], ['Khasra Number', 'khasraNo'], ['Khata Number', 'khataNo'], ['Area', 'area'], ['Location', 'location']]
-
 export default function OcrResults() {
-  const upload = getDemoUpload()
-  const navigate = useNavigate()
-  return <Layout title="Document preview and extraction">
-    <div className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="status-pill pill-teal">1 Upload complete</span><span className="text-slate-300">→</span><span className="status-pill pill-amber">2 OCR simulated</span><span className="text-slate-300">→</span><span className="text-slate-400">3 Match evidence</span><span className="text-slate-300">→</span><span className="text-slate-400">4 Verify result</span></div>
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5"><section className="panel"><div className="panel-heading"><div><h3>Document preview</h3><p>Uploaded source document</p></div><span className="status-pill pill-teal">Ready</span></div><div className="min-h-[330px] rounded-lg border border-dashed border-[#b9d6d8] bg-[#f6fbfb] flex flex-col items-center justify-center text-center"><div className="brand-mark small dark mb-4">B</div><strong className="text-sm text-[#183755] break-all px-6">{upload.fileName}</strong><span className="text-xs text-slate-400 mt-2">{upload.documentType} · Mock document preview</span></div><div className="grid grid-cols-3 gap-3 mt-5"><div><span className="block text-[10px] uppercase text-slate-400">Document type</span><strong className="text-sm text-[#183755]">{upload.documentType}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">District</span><strong className="text-sm text-[#183755]">{upload.district}</strong></div><div><span className="block text-[10px] uppercase text-slate-400">Village</span><strong className="text-sm text-[#183755]">{upload.village}</strong></div></div></section><section className="panel"><div className="panel-heading"><div><h3>Extracted land record</h3><p>Fields detected by the mock OCR pipeline</p></div><span className="status-pill pill-amber">{upload.confidence}% confidence</span></div><div className="space-y-2">{fields.map(([label, key]) => <div key={key} className="flex items-center justify-between border-b border-slate-100 py-3"><span className="text-xs text-slate-500">{label}</span><strong className="text-sm text-[#183755] text-right">{upload.extracted[key]}</strong></div>)}</div><div className={`mt-5 rounded-lg p-4 ${upload.risk === 'Low' ? 'bg-[#eaf7f3]' : 'bg-[#fff3f1]'}`}><div className="text-xs font-bold uppercase tracking-wide text-slate-500">Initial assessment</div><div className="text-sm font-bold text-[#183755] mt-1">{upload.risk === 'Low' ? 'Likely consistent' : 'Potential conflict detected'}</div><p className="text-xs text-slate-500 mt-1">{upload.reason}</p></div><button onClick={() => navigate('/validation?doc=demo-upload')} className="primary-button mt-5 w-full">Compare against existing evidence <span>-&gt;</span></button></section></div>
+  const { docId } = useParams()
+  const [document, setDocument] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    let objectUrl = ''
+    Promise.all([
+      api.get(`/documents/${docId}`),
+      api.get(`/documents/${docId}/file`, { responseType: 'blob' }),
+    ]).then(([detail, file]) => {
+      if (!active) return
+      setDocument(detail.data)
+      objectUrl = URL.createObjectURL(file.data)
+      setPreviewUrl(objectUrl)
+    }).catch((requestError) => {
+      if (active) setError(requestError.response?.data?.detail || 'Could not load this document.')
+    })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [docId])
+
+  return <Layout title="Document extraction and review">
+    {error && <p className="rounded-lg bg-red-50 p-4 text-sm text-red-700" role="alert">{error}</p>}
+    {!document && !error && <p className="text-sm text-slate-500" role="status">Loading document and OCR results...</p>}
+    {document && <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <section className="panel">
+        <div className="panel-heading"><div><h3>Uploaded document</h3><p>{document.filename}</p></div><span className="status-pill">{document.status}</span></div>
+        {previewUrl && document.content_type.startsWith('image/')
+          ? <img src={previewUrl} alt={`Uploaded ${document.filename}`} className="max-h-[600px] w-full rounded-lg border object-contain" />
+          : previewUrl && <iframe title={`Preview of ${document.filename}`} src={previewUrl} className="h-[600px] w-full rounded-lg border" />}
+      </section>
+      <section className="panel">
+        <div className="panel-heading"><div><h3>OCR extraction</h3><p>Fields recognized in this document; review them against the original.</p></div>
+          {document.ocr_confidence != null && <span className="status-pill">{document.ocr_confidence}% OCR confidence</span>}
+        </div>
+        {document.ocr_fields
+          ? <div className="space-y-2">{Object.entries(fieldLabels).map(([key, label]) => <div key={key} className="flex items-center justify-between gap-4 border-b border-slate-100 py-3">
+            <span className="text-xs text-slate-500">{label}</span>
+            <div className="text-right"><strong className="text-sm text-[#183755]">{document.ocr_fields[key] || 'Not detected'}</strong>
+              {document.field_confidence?.[key] != null && <span className="ml-2 text-xs text-slate-400">{document.field_confidence[key]}%</span>}</div>
+          </div>)}</div>
+          : <p className="text-sm text-slate-500">No extraction result is available for this document.</p>}
+        {document.score != null && <div className="mt-6 rounded-lg bg-[#f5f8fa] p-4">
+          <div className="flex items-center justify-between"><h4 className="font-semibold text-[#183755]">Review readiness score</h4><strong className="text-lg text-[#183755]">{document.score}/100</strong></div>
+          <div className="mt-3 space-y-2 text-xs text-slate-600">{Object.entries(document.score_components || {}).map(([key, value]) => <div key={key} className="flex justify-between gap-4"><span>{key.replaceAll('_', ' ')}</span><span>{value.status || `${value.points} points`}</span></div>)}</div>
+          {document.reasons?.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-amber-800">{document.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+          <p className="mt-4 text-xs font-semibold text-amber-800">{document.official_status}</p>
+        </div>}
+        <p className="mt-4 text-xs text-slate-400">This score is not a legal determination or official land-record verification. Only an authorized officer can review a case; the Copilot cannot approve documents.</p>
+      </section>
+    </div>}
+    <Link to="/records" className="view-all mt-5 inline-block">Back to documents -&gt;</Link>
   </Layout>
 }

@@ -1,41 +1,38 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import api from '../api'
 
 export default function AuditTrail() {
   const [logs, setLogs] = useState([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/audit').then((res) => setLogs(res.data)).catch(() => {})
+    let active = true
+    api.get('/audit')
+      .then((response) => { if (active) setLogs(response.data) })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.detail || 'Could not load the audit trail.')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [])
 
-  return (
-    <Layout title="Audit & Provenance Trail">
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <div className="flex justify-between items-center mb-4">
-          <div className="text-sm font-semibold text-govnavy">Full Action Log (most recent first)</div>
-          <button className="text-xs text-govblue hover:underline">Export Audit Log (CSV)</button>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-500 border-b">
-              <th className="py-2">Record ID</th><th>Action</th><th>Performed By</th><th>Prev → New</th><th>Timestamp</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((l) => (
-              <tr key={l.id} className="border-b last:border-0">
-                <td className="py-2 font-mono text-xs">{l.record_id ? l.record_id.slice(0,8) : '—'}</td>
-                <td>{l.action}</td>
-                <td>{l.performed_by}</td>
-                <td className="text-xs text-gray-500">{l.prev_value && l.new_value ? `${l.prev_value} → ${l.new_value}` : '—'}</td>
-                <td className="text-xs text-gray-500">{new Date(l.timestamp).toLocaleString()}</td>
-              </tr>
-            ))}
-            {logs.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-gray-400 text-sm">No audit entries yet.</td></tr>}
-          </tbody>
+  return <Layout title="Audit trail">
+    <section className="panel">
+      <div className="panel-heading"><div><h3>Recorded actions</h3><p>Authentication, registration, document, and review actions stored in PostgreSQL.</p></div></div>
+      {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
+      {loading ? <p className="py-8 text-center text-sm text-slate-500">Loading audit records...</p> : <div className="table-wrap">
+        <table><thead><tr><th>Actor</th><th>Action</th><th>Document / case</th><th>Previous → New</th><th>Timestamp</th></tr></thead>
+          <tbody>{logs.map((log) => <tr key={log.id}>
+            <td>{log.performed_by || 'System'}</td><td>{log.action}</td>
+            <td>{log.document_id ? <Link to={`/documents/${log.document_id}`} className="view-all">Document</Link> : log.case_id ? `Case ${log.case_id.slice(0, 8)}` : '—'}</td>
+            <td className="text-xs text-slate-500">{log.prev_value && log.new_value ? `${log.prev_value} → ${log.new_value}` : log.new_value || '—'}</td>
+            <td className="text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</td>
+          </tr>)}{logs.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-400">No audit actions have been recorded.</td></tr>}</tbody>
         </table>
-      </div>
-    </Layout>
-  )
+      </div>}
+    </section>
+  </Layout>
 }

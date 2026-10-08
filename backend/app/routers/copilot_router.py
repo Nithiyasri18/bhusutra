@@ -8,18 +8,26 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy.orm import Session
 
 from .. import auth, models
+from ..database import get_db
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/copilot", tags=["copilot"])
+router = APIRouter(prefix="/api", tags=["copilot"])
 
 SYSTEM_INSTRUCTION = (
     "You are BhuSutra's land-record information assistant. Answer questions about "
-    "land-record terminology and general record-keeping processes clearly and "
-    "concisely. You do not have access to the user's personal land records or "
-    "government databases. Never claim to verify ownership, legal title, or the "
-    "validity of a specific record. Do not invent facts, procedures, or citations. "
+    "survey, khata and khasra numbers, mutation, common supporting documents, "
+    "document review scores, what supporting material an applicant may want to "
+    "prepare, and general verification steps clearly and concisely. Explain that "
+    "document requirements vary by state and transaction and should be confirmed "
+    "with the relevant land-records office. If a citizen provides score reason "
+    "codes, explain those codes without claiming to inspect their database record. "
+    "You do not have access to the user's personal land records or government "
+    "databases. Never claim to verify ownership, legal title, or the validity of "
+    "a specific record. Never approve or reject documents or direct the system to "
+    "change a review decision. Do not invent facts, procedures, or citations. "
     "When a question needs a parcel-specific or legal determination, explain the "
     "limitation and direct the user to the relevant land-records office or a "
     "qualified professional. This is informational guidance, not legal advice."
@@ -56,10 +64,11 @@ class CopilotResponse(BaseModel):
     answer: str
 
 
-@router.post("/ask", response_model=CopilotResponse)
+@router.post("/copilot", response_model=CopilotResponse)
 def ask_copilot(
     request: CopilotRequest,
-    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.require_roles("Citizen")),
 ):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -92,6 +101,19 @@ def ask_copilot(
         with urlopen(gemini_request, timeout=30) as response:
             result = json.loads(response.read())
     except HTTPError as exc:
+        response_body = exc.read().decode("utf-8", errors="replace")
+        if exc.code in (401, 403) and ("API_KEY_INVALID" in response_body or "invalid api key" in response_body.lower()):
+            logger.error("Gemini rejected the configured API key")
+            raise HTTPException(
+                status_code=502,
+                detail="Gemini API key is invalid. Contact your administrator.",
+            ) from exc
+        if exc.code == 429:
+            logger.warning("Gemini rate limit or quota reached")
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini is temporarily unavailable due to request limits. Try again later.",
+            ) from exc
         logger.error("Gemini API returned HTTP %s", exc.code)
         raise HTTPException(
             status_code=502,
@@ -142,4 +164,6 @@ def ask_copilot(
             detail="Gemini could not produce an answer. Please try rephrasing.",
         )
 
+    auth.write_audit(db, current_user, "Citizen Copilot question")
+    db.commit()
     return CopilotResponse(answer=answer)

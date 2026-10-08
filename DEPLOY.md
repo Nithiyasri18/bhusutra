@@ -1,135 +1,80 @@
-# BhuSutra Production Deployment
+# BhuSutra production deployment
 
-This deploys the existing FastAPI backend to Render and connects the existing Vercel frontend to it. The frontend API client already uses `VITE_API_URL`, with `http://localhost:8000` only as the local-development fallback.
+BhuSutra uses React/Vite on Vercel and FastAPI/PostgreSQL on Render. It does not create demo users or sample land records. Citizen accounts are self-registered; the first administrator is provisioned explicitly, and administrators create staff accounts.
 
-## 1. Push the repository
+## Database migration and first administrator
 
-From the repository root:
+1. Back up the Render PostgreSQL database before deploying. The first Alembic migration creates the role, OCR-result and verification-score schema, converts existing string foreign keys, and removes the repository's known seeded demo staff accounts and the synthetic documents and records uploaded by those accounts. Review the migration before applying it to a database containing production information.
+2. Apply the Render Blueprint from the repository root. Its pre-deploy command runs `alembic upgrade head` before starting the API.
+3. In the Render service Shell, bootstrap the first real administrator using the interactive prompts:
+
+   ```powershell
+   cd backend
+   python bootstrap_admin.py
+   ```
+
+   The script refuses to create another first administrator once an Admin exists. It does not ship or print an account or password. Afterward, Admin users can provision Officer, Admin, and Auditor accounts from **Staff accounts**. New staff members set their own password with **Forgot password**.
+4. Do not run a database seed script. No seed script is included.
+
+## Render environment
+
+Configure these service variables in Render:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Render PostgreSQL connection string; provided by the Blueprint |
+| `SECRET_KEY` | Random secret of at least 32 characters for signing JWTs |
+| `ALLOWED_ORIGINS` | Comma-separated exact frontend origins, including `https://bhusutra-mu.vercel.app` |
+| `GEMINI_API_KEY` | Google AI Studio API key; never commit it |
+| `GEMINI_MODEL` | Gemini model name; Blueprint defaults to `gemini-2.5-flash` |
+| `UPLOAD_DIR` | Blueprint sets `/var/data/uploads`, on the attached persistent disk |
+| `FRONTEND_URL` | The frontend origin used in password-reset links |
+| `SMTP_HOST`, `SMTP_PORT` | SMTP host and STARTTLS port (Blueprint defaults to `587`) |
+| `SMTP_USER`, `SMTP_PASSWORD` | SMTP credentials; use a provider-issued app password where applicable |
+| `SMTP_FROM_EMAIL` | Verified sender address for reset messages |
+
+Do not put quotes around values or include trailing slashes in origins. Generate secrets in the hosting dashboard; do not place production credentials in `.env`, Vercel source, or Git.
+
+The Gemini Copilot returns a configuration error until `GEMINI_API_KEY` is set. Forgot-password requests return an email configuration error until SMTP and `FRONTEND_URL` are set. Both features fail explicitly rather than pretending to have succeeded.
+
+The persistent Render disk keeps uploaded files across service restarts. The Blueprint attaches a 1 GB paid disk; confirm the current plan, disk pricing, and size availability in Render before applying it. Back the disk up independently according to your retention policy. Database backup alone does not back up document files.
+
+## Vercel environment
+
+Set `VITE_API_URL` to the actual HTTPS URL displayed on the Render service page, with no trailing slash. Set it for Production (and Preview if that deployment should use the API), then redeploy Vercel: Vite embeds this variable at build time. Confirm the production JavaScript sends requests to the Render origin, never `localhost`.
+
+The backend CORS allow-list must include the exact Vercel origin. For a preview deployment, add its exact origin only if that preview needs API access.
+
+## Local development
+
+Copy `backend/.env.example` to `backend/.env`, use a local PostgreSQL database, and generate a private development `SECRET_KEY` with at least 32 characters. Run:
 
 ```powershell
-git add .
-git commit -m "Prepare backend deployment"
-git push origin main
-```
-
-## 2. Create the Render Blueprint
-
-1. Sign in at [Render](https://render.com) and connect the GitHub account that owns this repository.
-2. Select **New +** and choose **Blueprint**.
-3. Select the BhuSutra GitHub repository and branch `main`.
-4. Render detects the root `render.yaml`.
-5. Review the `bhusutra-api` web service and `bhusutra-postgres` database, then apply the Blueprint.
-
-The web service uses:
-
-```text
-Build: pip install -r backend/requirements.txt
-Start: uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
-Health: /
-```
-
-The manifest uses Render's paid `basic-256mb` PostgreSQL plan rather than assuming a free database tier. Render plan names, availability, region support, and pricing can change; if the plan is unavailable in your account, choose the currently offered managed PostgreSQL plan in the Render dashboard and keep the generated `DATABASE_URL` environment variable.
-
-## 3. Set backend environment variables
-
-In the Render web service environment settings, set:
-
-```text
-SECRET_KEY=<generate a long random production secret>
-ALLOWED_ORIGINS=https://bhusutra-mu.vercel.app,http://localhost:5173
-GEMINI_API_KEY=<Google AI Studio API key>
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-Do not commit `SECRET_KEY` or `GEMINI_API_KEY` to GitHub. Keep `http://localhost:5173` in the comma-separated list only if local frontend development should call the deployed API. The AI Copilot requires a valid Gemini API key; without one, its endpoint returns a configuration error.
-
-`DATABASE_URL` is connected automatically by the Blueprint from the managed `bhusutra-postgres` database. Do not replace it with a SQLite URL.
-
-## 4. Seed the Render PostgreSQL database
-
-The seed script deletes existing users, documents, records, verification cases, and audit logs before inserting demo data. Run it once on a new/empty production database.
-
-After the Render web service and database are available:
-
-1. Open the `bhusutra-api` service in Render.
-2. Open **Shell**.
-3. Run from the repository root:
-
-```bash
 cd backend
-python seed.py
+python -m pip install -r requirements.txt
+alembic upgrade head
+python bootstrap_admin.py
+uvicorn app.main:app --reload
 ```
 
-This working directory is required because `seed.py` imports `app.database`, `app.models`, and `app.auth`. The command uses Render's `DATABASE_URL` environment variable, so it seeds Render PostgreSQL, not a local database.
+Set `VITE_API_URL` in `frontend/.env.local` to `http://localhost:8000`, then run `npm install` and `npm run dev` in `frontend`. The root `.gitignore` excludes `.env` files.
 
-The existing backend demo account is:
+## Implemented services and limitations
 
-```text
-verifier@bhusutra.gov.in
-demo123
-```
+- `POST /auth/register` creates a Citizen only; passwords use PBKDF2-SHA256 hashing. JWT-protected routes enforce role access on the server.
+- `POST /api/copilot` accepts authenticated Citizen requests only. It provides general guidance and cannot inspect a citizen's database records or approve documents.
+- `POST /documents/upload` accepts PDF, JPG and PNG files up to 15 MB. Tesseract OCR runs on uploaded images and up to five PDF pages. Extraction is preliminary and must be reviewed against the source.
+- Camera capture requires browser permission and HTTPS. The client checks image brightness and blur before enabling capture/upload.
+- Readiness scores include extraction completeness and OCR confidence. Identifier/ownership checks remain unavailable and earn no points until an official source is connected; as a result the current score cannot auto-verify ownership. Documents are sent to officer review rather than presenting synthetic verification as fact.
+- DILRMP, LRMS, Bhulekh, and state-system adapter contracts are present, but no official API credentials or endpoints are configured. Requests report **Official verification service unavailable** and never fabricate a match or successful sync.
+- Audit actions, document metadata, OCR output, score components, verification cases, and account records are stored in PostgreSQL.
 
-## 5. Connect Vercel
+## Post-deployment checks
 
-1. Open the Vercel project for the deployed frontend.
-2. Go to **Project Settings → Environment Variables**.
-3. Add `VITE_API_URL` for Production (and Preview if required):
-
-```text
-VITE_API_URL=https://<your-render-service>.onrender.com
-```
-
-Do not add a trailing slash. Use the actual public URL shown in the Render service page. Save the variable and trigger **Redeploy** from Vercel. Vite injects `VITE_API_URL` at build time, so changing it requires a new frontend deployment.
-
-## 6. Production tests
-
-### Backend health
-
-Open:
-
-```text
-https://<your-render-service>.onrender.com/
-```
-
-Expected response:
-
-```json
-{"status":"BhuSutra API running"}
-```
-
-PowerShell check:
-
-```powershell
-Invoke-RestMethod https://<your-render-service>.onrender.com/
-```
-
-### Frontend and authentication
-
-Open:
-
-```text
-https://bhusutra-mu.vercel.app/login
-```
-
-Sign in with:
-
-```text
-Email: verifier@bhusutra.gov.in
-Password: demo123
-```
-
-Confirm in the browser Network and Console panels that:
-
-- `POST <render-url>/auth/login` succeeds
-- The dashboard loads from the deployed API
-- Records and dashboard requests return successfully
-- Verification queue/case APIs work
-- GIS-related requests do not fail
-- There are no CORS errors
-- Requests are not going to `localhost:8000`
-
-If login fails with a CORS error, check that `ALLOWED_ORIGINS` contains the exact Vercel origin with no trailing slash, then redeploy the Render service. If the API returns an authentication error, run the seed command against the Render database and verify the demo credentials.
-
-## Manual actions still required
-
-Render and Vercel account authorization cannot be completed from this repository. You must connect GitHub in Render, apply the Blueprint, enter the real `SECRET_KEY`, run the seed command in the Render Shell, copy the Render URL, add `VITE_API_URL` in Vercel, and redeploy the frontend.
+1. Open the Render health endpoint `/`; expect `{"status":"BhuSutra API running"}`.
+2. Confirm Alembic completed successfully in Render deploy logs.
+3. Register a real Citizen account and sign in. No sample account is available.
+4. Upload a permitted file and verify OCR output, score reasons, and upload history.
+5. Provision staff through the Admin screen and confirm password reset delivery.
+6. Confirm unauthorized roles receive `403` from protected endpoints and the Copilot is accessible only to Citizens.
+7. Check browser Network requests use the configured Render URL, CORS allows the exact Vercel origin, and Render logs show no Gemini/SMTP configuration errors.

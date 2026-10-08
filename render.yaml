@@ -5,6 +5,7 @@ services:
     region: singapore
     plan: starter
     buildCommand: pip install -r backend/requirements.txt
+    preDeployCommand: cd backend && alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
     healthCheckPath: /
     envVars:
@@ -16,6 +17,28 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: FRONTEND_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+    disk:
+      name: bhusutra-document-storage
+      mountPath: /var/data
+      sizeGB: 1
 
 databases:
   - name: bhusutra-postgres

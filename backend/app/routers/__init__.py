@@ -1,1 +1,1 @@
-from . import copilot_router
+from . import copilot_router, official_router
