@@ -16,13 +16,20 @@ RECORD_ID = "33333333-3333-4333-8333-333333333333"
 CASE_ID = "44444444-4444-4444-8444-444444444444"
 
 
-def make_legacy_schema(connection, *, primary_keys=True, document_fk_name="documents_uploaded_by_fkey"):
+def make_legacy_schema(
+    connection,
+    *,
+    primary_keys=True,
+    document_fk_name="documents_uploaded_by_fkey",
+    document_fk_default=False,
+):
     primary_key = " PRIMARY KEY" if primary_keys else ""
+    uploaded_by_default = " DEFAULT 'not-a-uuid'" if document_fk_default else ""
     connection.execute(text(f"CREATE TABLE users (id TEXT{primary_key})"))
     connection.execute(text(
         f"CREATE TABLE documents ("
         f"id TEXT{primary_key}, "
-        f"uploaded_by TEXT, "
+        f"uploaded_by TEXT{uploaded_by_default}, "
         f"CONSTRAINT {document_fk_name} FOREIGN KEY(uploaded_by) REFERENCES users(id))"
     ))
     connection.execute(text(
@@ -67,13 +74,20 @@ def insert_consistent_rows(connection):
     )
 
 
-def replace_legacy_schema(connection, *, primary_keys=True, document_fk_name="documents_uploaded_by_fkey"):
+def replace_legacy_schema(
+    connection,
+    *,
+    primary_keys=True,
+    document_fk_name="documents_uploaded_by_fkey",
+    document_fk_default=False,
+):
     for table_name in ("audit_logs", "verification_cases", "records", "documents", "users"):
         connection.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
     make_legacy_schema(
         connection,
         primary_keys=primary_keys,
         document_fk_name=document_fk_name,
+        document_fk_default=document_fk_default,
     )
 
 
@@ -115,6 +129,30 @@ class MigrationValidationTests(unittest.TestCase):
             ("invalid_foreign_key", "documents", "uploaded_by", 1),
             [(issue.code, issue.table, issue.column, issue.count) for issue in issues],
         )
+
+    def test_every_converted_reference_column_is_checked(self):
+        converted_references = (
+            ("documents", "uploaded_by", USER_ID),
+            ("records", "document_id", DOCUMENT_ID),
+            ("verification_cases", "record_id", RECORD_ID),
+            ("verification_cases", "assigned_to", USER_ID),
+            ("audit_logs", "record_id", RECORD_ID),
+        )
+        for table_name, column_name, current_value in converted_references:
+            with self.subTest(column=f"{table_name}.{column_name}"):
+                self.connection.execute(
+                    text(f"UPDATE {table_name} SET {column_name} = 'malformed' WHERE {column_name} = :current"),
+                    {"current": current_value},
+                )
+                issues = validate_legacy_schema(self.connection)
+                self.assertIn(
+                    ("invalid_foreign_key", table_name, column_name, 1),
+                    [(issue.code, issue.table, issue.column, issue.count) for issue in issues],
+                )
+                self.connection.execute(
+                    text(f"UPDATE {table_name} SET {column_name} = :current WHERE {column_name} = 'malformed'"),
+                    {"current": current_value},
+                )
 
     def test_orphaned_but_well_formed_foreign_key_is_reported(self):
         missing_user = str(uuid.uuid4())
@@ -174,6 +212,17 @@ class MigrationValidationTests(unittest.TestCase):
 
         self.assertIn(
             ("unexpected_foreign_key", "documents", "uploaded_by", 1),
+            [(issue.code, issue.table, issue.column, issue.count) for issue in issues],
+        )
+
+    def test_column_default_that_may_block_type_conversion_is_reported(self):
+        replace_legacy_schema(self.connection, document_fk_default=True)
+        insert_consistent_rows(self.connection)
+
+        issues = validate_legacy_schema(self.connection)
+
+        self.assertIn(
+            ("unsupported_column_default", "documents", "uploaded_by", 1),
             [(issue.code, issue.table, issue.column, issue.count) for issue in issues],
         )
 

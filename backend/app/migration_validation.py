@@ -122,6 +122,8 @@ def validate_legacy_schema(connection: Connection) -> list[MigrationIssue]:
         child_type = child.c[child_column].type
         if not isinstance(child_type, (String, Uuid)):
             issues.append(MigrationIssue("unsupported_source_type", child_name, child_column, 1))
+        if child.c[child_column].server_default is not None:
+            issues.append(MigrationIssue("unsupported_column_default", child_name, child_column, 1))
 
         parent_ids = set()
         for value in connection.execute(select(parent.c[parent_column])).scalars():
