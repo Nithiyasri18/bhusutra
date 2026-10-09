@@ -5,8 +5,17 @@ BhuSutra uses React/Vite on Vercel and FastAPI/PostgreSQL on Render. It does not
 ## Database migration and first administrator
 
 1. Back up the Render PostgreSQL database before deploying. The first Alembic migration creates the role, OCR-result and verification-score schema and converts existing string foreign keys. It does not delete user, document, record, or audit data. Review the migration and confirm the schema conversion matches the deployed database before applying it.
-2. Apply the Render Blueprint from the repository root. Its pre-deploy command runs `alembic upgrade head` before starting the API.
-3. In the Render service Shell, bootstrap the first real administrator using the interactive prompts:
+2. For an existing database, restore the backup into an isolated PostgreSQL staging database and run the read-only preflight there before applying any migration:
+
+   ```powershell
+   cd backend
+   $env:DATABASE_URL = "<connection string for the restored staging database>"
+   python -m app.migration_validation
+   ```
+
+   The command opens a PostgreSQL read-only transaction and checks the five legacy reference columns (`documents.uploaded_by`, `records.document_id`, `verification_cases.record_id`, `verification_cases.assigned_to`, and `audit_logs.record_id`) plus their identifier columns. It reports malformed UUIDs, orphan references, duplicate parent IDs, missing keys/tables/columns, unsupported types, and unexpected existing FK names. Null references are permitted because the migration makes these columns nullable. A passing preflight validates these data conditions only; it does not prove that every production schema detail is compatible. Do not run the migration on the live database until schema inspection and a staging restore-and-migrate rehearsal both pass.
+3. Apply the Render Blueprint from the repository root only after that review. Its pre-deploy command runs `alembic upgrade head` before starting the API. On a fresh database, the migration recognizes Alembic's own `alembic_version` table and creates the application schema.
+4. In the Render service Shell, bootstrap the first real administrator using the interactive prompts:
 
    ```powershell
    cd backend
@@ -14,7 +23,7 @@ BhuSutra uses React/Vite on Vercel and FastAPI/PostgreSQL on Render. It does not
    ```
 
    The script refuses to create another first administrator once an Admin exists. It does not ship or print an account or password. Afterward, Admin users can provision Officer, Admin, and Auditor accounts from **Staff accounts**. New staff members set their own password with **Forgot password**.
-4. Do not run a database seed script. No seed script is included.
+5. Do not run a database seed script. No seed script is included.
 
 ## Render environment
 

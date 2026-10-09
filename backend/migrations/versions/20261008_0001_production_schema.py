@@ -7,6 +7,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from app.migration_validation import validate_legacy_schema
+
 revision = "20261008_0001"
 down_revision = None
 branch_labels = None
@@ -161,11 +163,20 @@ def upgrade():
     inspector = sa.inspect(bind)
     tables = set(inspector.get_table_names())
 
-    if "users" not in tables:
-        if tables:
+    application_tables = tables - {"alembic_version"}
+    if "users" not in application_tables:
+        if application_tables:
             raise RuntimeError("An unversioned partial database exists; back it up and reconcile its schema before migration.")
         _create_fresh_schema(bind)
         return
+
+    issues = validate_legacy_schema(bind)
+    if issues:
+        details = "; ".join(str(issue) for issue in issues)
+        raise RuntimeError(
+            "Legacy schema preflight failed; no schema changes were applied. "
+            f"Resolve these issues and rerun: {details}"
+        )
 
     if "roles" not in tables:
         op.create_table(
