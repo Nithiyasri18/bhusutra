@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api'
+import { getApiErrorMessage } from '../apiErrors'
 
 function saveSession(data, email) {
   localStorage.setItem('bhusutra_token', data.access_token)
@@ -52,7 +53,7 @@ export default function Login() {
         setMode('login')
       }
     } catch (requestError) {
-      setError(requestError.response?.data?.detail || 'The request failed. Please try again.')
+      setError(getApiErrorMessage(requestError))
     } finally {
       setLoading(false)
     }

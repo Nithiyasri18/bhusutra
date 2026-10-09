@@ -8,7 +8,7 @@ import ssl
 from email.message import EmailMessage
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .. import auth, models, schemas
@@ -65,31 +65,52 @@ def send_reset_email(email: str, token: str, settings: dict):
 @router.post("/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED)
 def register(payload: schemas.RegistrationRequest, db: Session = Depends(get_db)):
     email = str(payload.email).lower()
-    if db.query(models.User.id).filter(models.User.email == email).first():
-        raise HTTPException(status_code=409, detail="An account with this email already exists")
-    if not db.query(models.Role.name).filter(models.Role.name == "Citizen").first():
-        raise HTTPException(status_code=503, detail="Registration is not available until the database is initialized")
-
-    user = models.User(
-        name=payload.name,
-        email=email,
-        mobile_number=payload.mobile_number,
-        password_hash=auth.hash_password(payload.password),
-        role="Citizen",
-    )
-    db.add(user)
     try:
+        if db.query(models.User.id).filter(models.User.email == email).first():
+            raise HTTPException(status_code=409, detail="An account with this email already exists")
+        if not db.query(models.Role.name).filter(models.Role.name == "Citizen").first():
+            raise HTTPException(status_code=503, detail="Registration is not available until the database is initialized")
+
+        user = models.User(
+            name=payload.name,
+            email=email,
+            mobile_number=payload.mobile_number,
+            password_hash=auth.hash_password(payload.password),
+            role="Citizen",
+        )
+        db.add(user)
         db.flush()
         auth.write_audit(db, user, "User registered", current="Citizen")
+        token = issue_token(user)
         db.commit()
-        db.refresh(user)
+    except HTTPException:
+        db.rollback()
+        raise
     except IntegrityError as exc:
         db.rollback()
-        if db.query(models.User.id).filter(models.User.email == email).first():
+        try:
+            duplicate = db.query(models.User.id).filter(models.User.email == email).first()
+        except SQLAlchemyError as query_exc:
+            logger.exception("Unable to determine why citizen registration failed")
+            raise HTTPException(
+                status_code=503,
+                detail="Registration is temporarily unavailable. Please try again.",
+            ) from query_exc
+        if duplicate:
             raise HTTPException(status_code=409, detail="An account with this email already exists") from exc
         logger.error("Database constraint rejected citizen registration (%s)", type(exc.orig).__name__)
-        raise HTTPException(status_code=500, detail="Account registration could not be completed.") from exc
-    return issue_token(user)
+        raise HTTPException(
+            status_code=503,
+            detail="Registration is temporarily unavailable. Please try again.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Database operation failed during citizen registration")
+        raise HTTPException(
+            status_code=503,
+            detail="Registration is temporarily unavailable. Please try again.",
+        ) from exc
+    return token
 
 
 @router.post("/login", response_model=schemas.Token)
