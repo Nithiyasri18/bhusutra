@@ -4,9 +4,9 @@ services:
     runtime: python
     region: singapore
     plan: starter
-    buildCommand: pip install -r backend/requirements.txt
-    preDeployCommand: cd backend && alembic upgrade head
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
+    buildCommand: python -m pip install -r backend/requirements.txt
+    preDeployCommand: cd backend && python -m alembic upgrade head
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
     healthCheckPath: /
     envVars:
       - key: DATABASE_URL

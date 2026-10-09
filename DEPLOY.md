@@ -4,7 +4,7 @@ BhuSutra uses React/Vite on Vercel and FastAPI/PostgreSQL on Render. It does not
 
 ## Database migration and first administrator
 
-1. Back up the Render PostgreSQL database before deploying. The first Alembic migration creates the role, OCR-result and verification-score schema, converts existing string foreign keys, and removes the repository's known seeded demo staff accounts and the synthetic documents and records uploaded by those accounts. Review the migration before applying it to a database containing production information.
+1. Back up the Render PostgreSQL database before deploying. The first Alembic migration creates the role, OCR-result and verification-score schema and converts existing string foreign keys. It does not delete user, document, record, or audit data. Review the migration and confirm the schema conversion matches the deployed database before applying it.
 2. Apply the Render Blueprint from the repository root. Its pre-deploy command runs `alembic upgrade head` before starting the API.
 3. In the Render service Shell, bootstrap the first real administrator using the interactive prompts:
 
@@ -17,6 +17,8 @@ BhuSutra uses React/Vite on Vercel and FastAPI/PostgreSQL on Render. It does not
 4. Do not run a database seed script. No seed script is included.
 
 ## Render environment
+
+The repository-root `.python-version` pins Render's native Python runtime to **3.12.8**. Keep the Render service root directory at the repository root so Render reads this file and the Blueprint's `backend/...` paths resolve correctly. The FastAPI/Pydantic/SQLAlchemy versions in `backend/requirements.txt` are intentionally pinned and compatible with this runtime; do not override the service's Python version to 3.14 without updating and testing the dependency set.
 
 Configure these service variables in Render:
 

@@ -174,58 +174,6 @@ def upgrade():
             sa.Column("description", sa.String(length=120), nullable=False),
         )
 
-    # Remove only accounts and records known to have been created by the old demo seed.
-    old_demo_emails = (
-        "admin@bhusutra.gov.in",
-        "verifier@bhusutra.gov.in",
-        "officer@bhusutra.gov.in",
-        "auditor@bhusutra.gov.in",
-    )
-    if "documents" in tables and "records" in tables and "verification_cases" in tables:
-        if "audit_logs" in tables:
-            bind.execute(sa.text("""
-                DELETE FROM audit_logs
-                WHERE record_id IN (
-                    SELECT r.id FROM records r JOIN documents d ON d.id = r.document_id
-                    WHERE d.uploaded_by::text IN (
-                        SELECT id::text FROM users WHERE email IN :emails
-                    )
-                )
-            """).bindparams(sa.bindparam("emails", expanding=True)), {"emails": old_demo_emails})
-        bind.execute(sa.text("""
-            DELETE FROM verification_cases
-            WHERE record_id IN (
-                SELECT r.id FROM records r JOIN documents d ON d.id = r.document_id
-                WHERE d.uploaded_by::text IN (
-                    SELECT id::text FROM users WHERE email IN :emails
-                )
-            )
-        """).bindparams(sa.bindparam("emails", expanding=True)), {"emails": old_demo_emails})
-        bind.execute(sa.text("""
-            DELETE FROM verification_cases WHERE assigned_to::text IN (
-                SELECT id::text FROM users WHERE email IN :emails
-            )
-        """).bindparams(sa.bindparam("emails", expanding=True)), {"emails": old_demo_emails})
-        bind.execute(sa.text("""
-            DELETE FROM records
-            WHERE document_id IN (
-                SELECT id FROM documents WHERE uploaded_by::text IN (
-                    SELECT id::text FROM users WHERE email IN :emails
-                )
-            )
-        """).bindparams(sa.bindparam("emails", expanding=True)), {"emails": old_demo_emails})
-        bind.execute(sa.text("""
-            DELETE FROM documents WHERE uploaded_by::text IN (
-                SELECT id::text FROM users WHERE email IN :emails
-            )
-        """).bindparams(sa.bindparam("emails", expanding=True)), {"emails": old_demo_emails})
-    bind.execute(
-        sa.text("DELETE FROM users WHERE email IN :emails").bindparams(
-            sa.bindparam("emails", expanding=True)
-        ),
-        {"emails": old_demo_emails},
-    )
-
     role_descriptions = {
         "Citizen": "Registered land-record applicant",
         "Officer": "Land-record verification officer",
