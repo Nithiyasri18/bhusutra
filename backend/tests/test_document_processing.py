@@ -65,6 +65,7 @@ class DocumentProcessingTests(unittest.TestCase):
 
     def test_initial_migration_creates_production_schema_and_only_roles(self):
         import importlib.util
+        from sqlalchemy import text
 
         migration_path = Path(__file__).parents[1] / "migrations" / "versions" / "20261008_0001_production_schema.py"
         spec = importlib.util.spec_from_file_location("production_schema_migration", migration_path)
@@ -73,8 +74,11 @@ class DocumentProcessingTests(unittest.TestCase):
         engine = create_engine("sqlite://")
         try:
             with engine.begin() as connection:
+                connection.execute(text(
+                    "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+                ))
                 with Operations.context(MigrationContext.configure(connection)):
-                    migration._create_fresh_schema(connection)
+                    migration.upgrade()
                 table_names = set(inspect(connection).get_table_names())
                 self.assertTrue({
                     "users", "roles", "documents", "verification_cases",
